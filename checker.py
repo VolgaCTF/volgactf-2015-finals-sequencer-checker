@@ -14,7 +14,7 @@ class SequencerChecker(Server):
         task+="name;"+self.genlogin()+"\n"
         task+="func;"+random.choice(self.functions)+"\n"
         data = ''.join(random.choice(['A', 'C', "T", "G"]) for i in range(random.randint(5,15)))
-        task+="data;"+"{"+"s1 "+data+"}"+"\n"
+        task+="data;"+"{"+":s1 "+data+"}"+"\n"
         task+="comment;"+flag+"\n"
         return task
 
@@ -22,7 +22,7 @@ class SequencerChecker(Server):
         fd, filename = tempfile.mkstemp("sequencer",text=True)
         os.write(fd, self.create_task_string(flag))
         os.close(fd)
-        return fd,filename
+        return fd, filename
 
     def genpassword(self):
         length = random.randint(10, 15)
@@ -46,28 +46,48 @@ class SequencerChecker(Server):
                 try:
                     fd, filename = checker.create_temp_task_file(flag)
                     cookie = r.history[0].cookies["JSESSIONID"]
-                    files = {'task': open(filename,"r")}
-                    r2 = requests.post("http://"+endpoint+":8080/",files=files)
+                    print username
+                    print password 
+		    files = {'task': open(filename,"r")}
+                    r2 = requests.post("http://"+endpoint+":8080/",files=files, cookies=dict(JSESSIONID=cookie), timeout=10)
                     if r2.status_code == 200:
                         text = r2.text
                         if not flag in text:
-                            return Result.CORRUPT
+                            return Result.CORRUPT, username+";"+password
                         else:
-                            return Result.OK, username+";"+password
+                            return Result.UP, username+";"+password
+                    else:
+                        return Result.MUMBLE, username+";"+password
                 finally:
-                    os.remove(fd)
+                    os.remove(filename)
             else:
-                return Result.MUMBLE
+                return Result.MUMBLE, ""
         except requests.ConnectionError:
-            return Result.DOWN
+            return Result.DOWN, ""
         except requests.HTTPError:
-            return Result.DOWN
+            return Result.DOWN, ""
         except requests.exceptions.Timeout:
-            return Result.DOWN
+            return Result.DOWN, ""
 
     def pull(self, endpoint, flag_id, flag):
-        pass
-
+        username, password = flag_id.split(';')
+        try:
+           payload = {'username':username, 'password':password}
+           r = requests.post("http://"+endpoint+":8080/do-login", data=payload, timeout=10)
+           if r.status_code == 200:
+               text = r.text
+               if not flag in text:
+                   return Result.CORRUPT
+               else:
+                   return Result.UP
+           else:
+               return Result.MUMBLE
+        except requests.ConnectionError:
+           return Result.DOWN
+        except requests.HTTPError:
+           return Result.DOWN
+        except requests.exceptions.Timeout:
+           return Result.DOWN
 
 checker = SequencerChecker()
-print checker.push("localhost","wewewe","#THISISFLAG!")
+checker.run()
