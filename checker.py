@@ -4,62 +4,90 @@ from themis.checker import Server, Result
 import string, random, os
 import requests
 import tempfile
+import collections
+
 
 class SequencerChecker(Server):
-
     functions = ["count-nucleo", "dna-to-rna", "reverse-complement-dna"]
 
-    def create_task_string(self,flag):
+    def solve(self, data_string, task):
+        if task == "count-nucleo":
+            count = collections.Counter(data_string)
+            return "A:"+str(count.get("A",0))
+        elif task == "dna-to-rna":
+            return data_string.replace("T","U")
+        elif task == "reverse-complement-dna":
+            data_string = data_string.replace("A","T")
+            data_string = data_string.replace("T","A")
+            data_string = data_string.replace("G","C")
+            data_string = data_string.replace("C","G")
+            return data_string[::-1]
+
+    def create_task_string(self, flag):
         task = ""
-        task+="name;"+self.genlogin()+"\n"
-        task+="func;"+random.choice(self.functions)+"\n"
-        data = ''.join(random.choice(['A', 'C', "T", "G"]) for i in range(random.randint(5,15)))
-        task+="data;"+"{"+":s1 "+data+"}"+"\n"
-        task+="comment;"+flag+"\n"
-        return task
+        task += "name;" + self.gen_login() + "\n"
+        func = random.choice(self.functions)
+        task += "func;" + func + "\n"
+        data = ''.join(random.choice(['A', 'C', "T", "G"]) for i in range(random.randint(5, 15)))
+        task += "data;" + "{" + ":s1 " + data + "}" + "\n"
+        task += "comment;" + flag + "\n"
+        res = self.solve(data,func)
+        return task, res
 
-    def create_temp_task_file(self,flag):
-        fd, filename = tempfile.mkstemp("sequencer",text=True)
-        os.write(fd, self.create_task_string(flag))
+    def create_temp_task_file(self, flag):
+        fd, filename = tempfile.mkstemp("sequencer", text=True)
+        data, res = self.create_task_string(flag)
+        os.write(fd, data)
         os.close(fd)
-        return fd, filename
+        return fd, filename, res
 
-    def genpassword(self):
+    @staticmethod
+    def gen_password():
         length = random.randint(10, 15)
         chars = string.ascii_letters + string.digits + '_'
         random.seed = (os.urandom(1024))
         return ''.join(random.choice(chars) for i in range(length))
 
-    def genlogin(self):
-        length = random.randint(5,12)
-        chars = string.ascii_letters+string.digits+'_'
+    @staticmethod
+    def gen_login():
+        length = random.randint(5, 12)
+        chars = string.ascii_letters + string.digits + '_'
         random.seed = (os.urandom(1024))
         return ''.join(random.choice(chars) for i in range(length))
 
     def push(self, endpoint, flag_id, flag):
-        username = self.genlogin()
-        password = self.genpassword()
-        payload = {'username':username, 'password':password}
+        username = self.gen_login()
+        password = self.gen_password()
+        payload = {'username': username, 'password': password}
         try:
-            r = requests.post("http://"+endpoint+":8080/do-register", data=payload, timeout=10)
+            r = requests.post("http://" + endpoint + ":8080/do-register", data=payload, timeout=10)
             if r.status_code == 200:
                 try:
-                    fd, filename = checker.create_temp_task_file(flag)
+                    fd, filename, res = checker.create_temp_task_file(flag)
+
                     cookie = r.history[0].cookies["JSESSIONID"]
                     print username
-                    print password 
-		    files = {'task': open(filename,"r")}
-                    r2 = requests.post("http://"+endpoint+":8080/",files=files, cookies=dict(JSESSIONID=cookie), timeout=10)
+                    print password
+                    print res
+                    files = {'task': open(filename, "r")}
+                    r2 = requests.post("http://" + endpoint + ":8080/", files=files, cookies=dict(JSESSIONID=cookie),
+                                       timeout=10)
                     if r2.status_code == 200:
                         text = r2.text
-                        if not flag in text:
-                            return Result.CORRUPT, username+";"+password
+                        if not res in text:
+                            return Result.CORRUPT, username + ";" + password
                         else:
-                            return Result.UP, username+";"+password
+                            if not flag in text:
+                                return Result.CORRUPT, username + ";" + password
+                            else:
+                                return Result.UP, username + ";" + password
                     else:
-                        return Result.MUMBLE, username+";"+password
+                        return Result.MUMBLE, username + ";" + password
                 finally:
-                    os.remove(filename)
+                    try:
+                        os.remove(filename)
+                    except WindowsError:
+                        pass
             else:
                 return Result.MUMBLE, ""
         except requests.ConnectionError:
@@ -72,22 +100,24 @@ class SequencerChecker(Server):
     def pull(self, endpoint, flag_id, flag):
         username, password = flag_id.split(';')
         try:
-           payload = {'username':username, 'password':password}
-           r = requests.post("http://"+endpoint+":8080/do-login", data=payload, timeout=10)
-           if r.status_code == 200:
-               text = r.text
-               if not flag in text:
-                   return Result.CORRUPT
-               else:
-                   return Result.UP
-           else:
-               return Result.MUMBLE
+            payload = {'username': username, 'password': password}
+            r = requests.post("http://" + endpoint + ":8080/do-login", data=payload, timeout=10)
+            if r.status_code == 200:
+                text = r.text
+                if not flag in text:
+                    return Result.CORRUPT
+                else:
+                    return Result.UP
+            else:
+                return Result.MUMBLE
         except requests.ConnectionError:
-           return Result.DOWN
+            return Result.DOWN
         except requests.HTTPError:
-           return Result.DOWN
+            return Result.DOWN
         except requests.exceptions.Timeout:
-           return Result.DOWN
+            return Result.DOWN
+
 
 checker = SequencerChecker()
-checker.run()
+checker.push("localhost", None, "THIS IS FLAG!")
+#checker.run()
