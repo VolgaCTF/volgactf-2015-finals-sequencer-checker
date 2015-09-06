@@ -119,5 +119,4 @@ class SequencerChecker(Server):
 
 
 checker = SequencerChecker()
-checker.push("localhost", None, "THIS IS FLAG!")
-#checker.run()
+checker.run()
