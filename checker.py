@@ -6,6 +6,7 @@ import requests
 import tempfile
 import collections
 
+seq_dict = {'A':'T', "T":"A", "G":"C", "C":"G"}
 
 class SequencerChecker(Server):
     functions = ["count-nucleo", "dna-to-rna", "reverse-complement-dna"]
@@ -13,22 +14,25 @@ class SequencerChecker(Server):
     def solve(self, data_string, task):
         if task == "count-nucleo":
             count = collections.Counter(data_string)
-            return "A:"+str(count.get("A",0))
+            if count.get("A",0) != 0:
+                return "A:"+str(count.get("A"))
+            elif count.get("T",0) !=0:
+                return "T:"+str(count.get("T"))
+            elif count.get("C",0) !=0:
+                return "C:"+str(count.get("C"))
+            else:
+                return "G:"+str(count.get("G"))
         elif task == "dna-to-rna":
             return data_string.replace("T","U")
         elif task == "reverse-complement-dna":
-            data_string = data_string.replace("A","T")
-            data_string = data_string.replace("T","A")
-            data_string = data_string.replace("G","C")
-            data_string = data_string.replace("C","G")
-            return data_string[::-1]
+            return "".join(seq_dict[base] for base in reversed(data_string))
 
     def create_task_string(self, flag):
         task = ""
         task += "name;" + self.gen_login() + "\n"
         func = random.choice(self.functions)
         task += "func;" + func + "\n"
-        data = ''.join(random.choice(['A', 'C', "T", "G"]) for i in range(random.randint(5, 15)))
+        data = ''.join(random.choice(['A', 'C', "T", "G"]) for i in range(random.randint(8, 25)))
         task += "data;" + "{" + ":s1 " + data + "}" + "\n"
         task += "comment;" + flag + "\n"
         res = self.solve(data,func)
